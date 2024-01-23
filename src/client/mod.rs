@@ -47,6 +47,10 @@ mod timeline;
 /// [here](https://github.com/rgaufman/live555/blob/41a5ec5f65bd626918a43951f743b4c9ffc52289/liveMedia/include/RTSPServer.hh#L35).
 const LIVE555_EXPIRATION_SEC: u64 = 65;
 
+// Custom hacks to support camera quirks and custom headers
+const TIMESTAMP_WORKAROUND: bool = true;
+const RTSP_OPTION_RATE_CONTROL: bool = true;
+
 /// A stale RTP session. See explanation at [`SessionGroup`].
 struct StaleSession {
     seqnum: u64,
@@ -1456,6 +1460,9 @@ impl RtspConnection {
             DEFAULT_USER_AGENT
         };
         req.insert_header(rtsp_types::headers::USER_AGENT, user_agent.to_string());
+        if RTSP_OPTION_RATE_CONTROL {
+            req.insert_header(rtsp_types::headers::RATE_CONTROL, "no".to_string());
+        }
 
         Ok(cseq)
     }
@@ -1841,7 +1848,8 @@ impl Session<Described> {
                         InitialTimestampPolicy::Require | InitialTimestampPolicy::Default
                             if setup_streams > 1 =>
                         {
-                            if initial_rtptime.is_none() {
+                            let is_none = initial_rtptime.is_none();
+                            if is_none && !TIMESTAMP_WORKAROUND {
                                 bail!(ErrorInt::RtspResponseError {
                                     conn_ctx: *conn.inner.ctx(),
                                     msg_ctx,
@@ -1855,8 +1863,11 @@ impl Session<Described> {
                                         policy.initial_timestamp, i, &s.control
                                     ),
                                 });
+                            } else if TIMESTAMP_WORKAROUND {
+                                Some(0)
+                            } else {
+                                initial_rtptime
                             }
-                            initial_rtptime
                         }
                         InitialTimestampPolicy::Permissive
                             if setup_streams > 1 && all_have_time =>

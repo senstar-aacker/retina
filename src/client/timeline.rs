@@ -6,6 +6,8 @@ use std::num::{NonZeroI32, NonZeroU32};
 
 use crate::Timestamp;
 
+use super::TIMESTAMP_WORKAROUND;
+
 const MAX_FORWARD_TIME_JUMP_SECS: u32 = 10;
 
 /// Creates [Timestamp]s (which don't wrap and can be converted to NPT aka normal play time)
@@ -61,15 +63,17 @@ impl Timeline {
     pub fn advance_to(&mut self, rtp_timestamp: u32) -> Result<Timestamp, String> {
         let (timestamp, delta) = self.ts_and_delta(rtp_timestamp)?;
         if matches!(self.max_forward_jump, Some(j) if !(0..j.get()).contains(&delta)) {
-            return Err(format!(
-                "Timestamp jumped {} ({:.03} sec) from {} to {}; \
+            if !(TIMESTAMP_WORKAROUND && self.timestamp == 0) {
+                return Err(format!(
+                    "Timestamp jumped {} ({:.03} sec) from {} to {}; \
                    policy is to allow 0..{} sec only",
-                delta,
-                (delta as f64) / f64::from(self.clock_rate.get()),
-                self.timestamp,
-                timestamp,
-                self.max_forward_jump_secs
-            ));
+                    delta,
+                    (delta as f64) / f64::from(self.clock_rate.get()),
+                    self.timestamp,
+                    timestamp,
+                    self.max_forward_jump_secs
+                ));
+            }
         }
         self.timestamp = timestamp.timestamp;
         Ok(timestamp)
